@@ -1,0 +1,215 @@
+# created: STEPHANY CAMILA LAZO TEIXEIRA
+
+# RELATORIO DE INVESTIMENTOS MENSAL.
+
+# PACOTES
+library(readxl)
+library(readr)
+library(openxlsx)
+library(dplyr)
+library(writexl)
+library(xlsx)
+library(scales)
+
+# DADOS DE REFERENCIA PARA ADICAO A PLANILHA
+caminho = "Z:/GERENCIA/INVESTIMENTOS/11. PROJETO/1- TESTES/" # caminho do arquivo
+
+###### DADOS A SEREM PREENCHIDOS ######
+Dia = "02"  # dia de referencia
+Mes = "02"  # mes de referncia
+Mes_extenso = "Fevereiro_"
+Ano = "2023"
+# PREENCHER NA LINHA 206 E 211 O DIA UTEL CORRESPONDENTE
+#####################################################################################
+
+DATA_ANALISE = paste0(Ano,"-",Mes,"-",Dia) # DATA BASE
+
+link_cvm = "https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/" # SITE DA CVM (SE O CODIGO NAO RODAR, VERIFICAR O LINK)
+link_cvm2 = "inf_diario_fi_"  
+sufixo_cvm = paste0(Ano,Mes) # CRIANDO O SUFIXO PARA O SITE
+link_cvm_final = paste0(link_cvm,link_cvm2,sufixo_cvm)
+name_file = paste0(link_cvm2,sufixo_cvm, ".csv")
+
+# REALIZANDO O DOWNLOAD DO ARQUIVO
+tmp = tempfile() # arquivo temporario
+myurl = paste0(link_cvm_final,".zip") # url em zip
+download.file(url = myurl, destfile = tmp) # fazendo download temporario do arquivo
+df = unzip(tmp, files = name_file)
+df = read.table(df, sep = ";", header = T) # dataframe do arquivo cvm
+df = filter(df, df$DT_COMPTC == DATA_ANALISE) # FILTRANDO PELA DATA QUE QUEREMOS
+
+# criando lista de codigos das contas
+CO_CONTA_BB = data.frame(CO_CONTA = c("16907-2", 
+                                      "17038-0", 
+                                      "20883-3", 
+                                      "20884-1",
+                                      "19917-6", 
+                                      "19918-4", 
+                                      "20403-X"))
+  
+CO_CONTA_CAIXA = data.frame(CO_CONTA = c("00003-4", 
+                                         "00265-7", 
+                                         "00387-4", 
+                                         "00530-3", 
+                                         "00532-0", 
+                                         "71371-5", 
+                                         "00773-0", 
+                                         "00774-8", 
+                                         "00833-7", 
+                                         "71067-8", 
+                                         "71070-8",
+                                         "71074-0", 
+                                         "00900-7", 
+                                         "71073-2", 
+                                         "00901-5", 
+                                         "71075-9", 
+                                         "00899-0", 
+                                         "71076-7", 
+                                         "00898-1", 
+                                         "71071-6", 
+                                         "71072-4", 
+                                         "71182-8", 
+                                         "71220-4",
+                                         "00771-3", 
+                                         "00772-1", 
+                                         "00831-0", 
+                                         "71221-2",
+                                         "71272-7", 
+                                         "71273-5",
+                                         "71274-3"))
+
+# Puxando a lista de fundos
+Fundos = read_excel("Z:/GERENCIA/INVESTIMENTOS/11. PROJETO/1- TESTES/Cadastro Fundos.xlsx") # lista de fundos
+
+my_df = merge(df, Fundos, by.x = "CNPJ_FUNDO", by.y = "CNPJ") # Deixando apenas as informações dos fundos que aplicamos, juntando a informações de ambos df.
+
+########################################################################
+#Blacklist : no estudo anterior retiraram esses CNPJs
+my_df = filter(my_df, my_df$CNPJ_FUNDO != "35.292.597/0001-70")
+#Fundos = filter(Fundos, Fundos$CNPJ_FUNDO != "10.740.658/0001-93")
+my_df = filter(my_df, my_df$CNPJ_FUNDO != "45.443.475/0001-90")
+my_df = filter(my_df, my_df$CNPJ_FUNDO != "44.683.378/0001-02")
+#######################################################################
+
+lista = function(banco){
+  
+  lista = as.data.frame(my_df$NOME[grep(banco, my_df$NOME)])
+  lista = data.frame(NOME = c(my_df$NOME[grep(banco, my_df$NOME)]))
+  
+  #codigos dos bancos, coloquei manualmente
+  if (banco == "BB") {
+    x = "1"
+    y = "0086-8"
+    
+  }else if (banco == "CAIXA") {
+    x = "104"
+    y = "4204-6"
+    
+  }
+   #ainda n  identifiquei os codigos
+  lista[c("CO_BANCO")] = x   # ok certinho 
+  lista[c("CO_AGENCIA")] = y    # ok, certinho 
+  
+  return(lista)
+}
+
+lista_CAIXA = lista("CAIXA")  
+lista_BB = lista("BB")  
+
+lista = rbind(lista_CAIXA,lista_BB)
+
+juncao = function(banco){
+  
+  if (banco == "BB"){
+    i = length(CO_CONTA_BB$CO_CONTA)
+    n = length(lista_BB$NOME)
+    lista = lista_BB 
+    CO_CONTA = CO_CONTA_BB
+    
+  }else if(banco == "CAIXA"){
+    i = length(CO_CONTA_CAIXA)
+    n = length(lista_CAIXA$NOME)
+    lista = lista_CAIXA
+    CO_CONTA = CO_CONTA_CAIXA
+  }  
+  
+  # REPLICANDO O MY_DF
+  lista_dup = do.call("rbind", replicate(i,lista, simplify = FALSE))
+  
+  # REPLICANDO CO_CONTA_BB E CO_CONTA_CAIXA
+  CO_CONTA_dup = do.call("rbind", replicate(n,CO_CONTA, simplify = FALSE))  
+  
+  # JUNTANDO AS DUAS BASES PELA COLUNA NOME 
+  my_base = merge(my_df, lista_dup, by.x = "NOME", by.y = "NOME")
+  
+  # juntando o df com os codigos das contas lado a lado
+  df_final = cbind(my_base, CO_CONTA_dup)
+  
+  
+  return(df_final)
+}
+
+df_BB = juncao("BB")
+df_CAIXA = juncao("CAIXA")
+
+# Juntando os dois df
+my_df = rbind(df_BB,df_CAIXA)
+
+# Criando (caso nao exista) ou puxando o arquivo de distribuição e aplicações.
+
+my_data = cbind(my_df$DT_COMPTC, # DATA
+                rep("1762",length(my_df$DT_COMPTC)), #CO_FUNDO
+                my_df$CO_BANCO, #CO_BANCO
+                my_df$CO_AGENCIA, #CO_AGENCIA
+                my_df$CO_CONTA, #CO_CONTA
+                rep(NA,length(my_df$DT_COMPTC)), #SALDO      3 havia colocado vl_total porem verifiquei que nao corresponde
+                rep(NA,length(my_df$DT_COMPTC)), #SALDO_BLOQUEADO
+                my_df$NOME, # FUNDO_INVESTIMENTO
+                my_df$CNPJ_FUNDO, #CNPJ
+                rep(NA,length(my_df$DT_COMPTC)), # PATRIMONIO_FUNDO             # havia colocado VL_PATRIM_LIQ, porem verifiquei que nao corresponde
+                my_df$CAPTC_DIA, #APLICAÇÃO
+                my_df$RESG_DIA, #RESGATE
+                my_df$ENQUADRAMENTO, #ENQUADRAMENTO_LEGAL
+                my_df$`Limite do Enquadramento Legal`, # LIMITE_ENQUAD_LEGAL
+                my_df$SEGMENTO,
+                rep(NA,length(my_df$DT_COMPTC))) #SALDO_BANCOS
+
+# Renomeando o titulo das colunas.
+colnames(my_data) = c("DATA",
+                      "CO_FUNDO",
+                      "CO_BANCO",
+                      "CO_AGENCIA",
+                      "CO_CONTA",
+                      "SALDO",
+                      "SALDO_BLOQUEADO",
+                      "FUNDO_INVESTIMENTO",
+                      "CNPJ",
+                      "PATRIMONIO_FUNDO",
+                      "APLICACAO",
+                      "RESGATE",
+                      "ENQUADRAMENTO_LEGAL",
+                      "LIMITE_ENQUAD_LEGAL",
+                      "SEGMENTO",
+                      "SALDO_BANCOS")
+
+my_data = as.data.frame(my_data)
+class(my_data$CO_BANCO)
+
+my_data$LIMITE_ENQUAD_LEGAL = as.numeric(as.character(my_data$LIMITE_ENQUAD_LEGAL)) # transfomando em numerico
+my_data$LIMITE_ENQUAD_LEGAL = percent(my_data$LIMITE_ENQUAD_LEGAL,accuracy = 1) #transformando em porcentagem
+
+arquivo = "Z:/GERENCIA/INVESTIMENTOS/11. PROJETO/1- TESTES/test-final.xlsx"
+# Exportando tabelas para o Excel
+if (!file.exists(arquivo))  { # SE O ARQUIVO NAO XISTE AINDA, IRÁ CRIAR UM
+  
+  write_xlsx(list("2" = my_data),
+             path = "Z:/GERENCIA/INVESTIMENTOS/11. PROJETO/1- TESTES/test-final.xlsx")
+  
+} else { # SE O ARQUIVO JÁ EXISTE, IRÁ ADICIONAR A NOVA ABA
+  write.xlsx(my_data,
+             file = "Z:/GERENCIA/INVESTIMENTOS/11. PROJETO/1- TESTES/test-final.xlsx",
+             sheetName = "2",
+             append = TRUE)
+
+}
+
